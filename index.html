@@ -368,6 +368,8 @@ async function syncAll(){
   try{
     const r=await apiFetch('getReqs');
     DATA.reqs=(r||[]).map(req=>{
+      // Google Sheets convierte IDs numéricos a tipo Number — forzar a String siempre
+      req.id=String(req.id);
       // Google Sheets guarda arrays/objetos como texto JSON — hay que reconvertirlos
       if(typeof req.items==='string'){
         try{ req.items=JSON.parse(req.items); }catch(e){ req.items=[]; }
@@ -380,6 +382,12 @@ async function syncAll(){
       if(!Array.isArray(req.tipos)) req.tipos=req.tipo?[req.tipo]:['compra'];
       // tieneComprobante puede llegar como texto 'true'/'false' desde Sheets
       if(typeof req.tieneComprobante==='string') req.tieneComprobante=(req.tieneComprobante==='true');
+      // Google Sheets convierte fechas tipo "2026-06-17" a timestamps completos — normalizar
+      ['fecha','fechaAprobacion','fechaPago'].forEach(fkey=>{
+        if(req[fkey]&&typeof req[fkey]==='string'&&req[fkey].includes('T')){
+          req[fkey]=req[fkey].slice(0,10);
+        }
+      });
       return req;
     });
     localStorage.setItem(SK_DATA,JSON.stringify(DATA));
@@ -596,7 +604,7 @@ function renderRepositorio(){
 
 // ─── DETAIL ────────────────────────────────────────────
 function openDetail(id){
-  const r=DATA.reqs.find(x=>x.id===id); if(!r) return;
+  const r=DATA.reqs.find(x=>String(x.id)===String(id)); if(!r) return;
   const sc={pendiente:'#92400E',aprobada:'#1E40AF',pagada:'#065F46',rechazada:'#991B1B'};
   document.getElementById('detail-modal-title').textContent=(r.folio||r.id)+' — '+r.solicitante;
   document.getElementById('detail-modal-top').style.background=sc[r.status]||'#1a1a2e';
@@ -658,7 +666,7 @@ function openDetail(id){
 
 // ─── STATUS CHANGES ────────────────────────────────────
 async function changeStatus(id, newStatus){
-  const r=DATA.reqs.find(x=>x.id===id); if(!r) return;
+  const r=DATA.reqs.find(x=>String(x.id)===String(id)); if(!r) return;
   const roleLabel={admin:'Administrador',jefe:'Jefe',contador:'Contador'}[currentRole]||currentRole;
   r.status=newStatus;
   if(newStatus==='aprobada'){ r.aprobadoPor=roleLabel; r.fechaAprobacion=new Date().toISOString().slice(0,10); }
@@ -670,7 +678,7 @@ async function changeStatus(id, newStatus){
 }
 function promptRechazo(id){
   const motivo=prompt('Motivo del rechazo (opcional):');
-  const r=DATA.reqs.find(x=>x.id===id); if(!r) return;
+  const r=DATA.reqs.find(x=>String(x.id)===String(id)); if(!r) return;
   r.status='rechazada';
   r.rechazadoPor={admin:'Administrador',jefe:'Jefe',contador:'Contador'}[currentRole]||currentRole;
   r.motivoRechazo=motivo||'';
@@ -692,7 +700,7 @@ function openNewReq(){
 }
 
 function openEditReq(id){
-  const r=DATA.reqs.find(x=>x.id===id); if(!r) return;
+  const r=DATA.reqs.find(x=>String(x.id)===String(id)); if(!r) return;
   editId=id; pendingItems=(r.items&&r.items.length)?r.items.map(i=>({...i})):[{desc:'',qty:1,precio:''}];
   document.getElementById('req-modal-title').textContent='Editar — '+(r.folio||id);
   document.getElementById('btn-del-req').style.display='';
@@ -806,7 +814,7 @@ async function saveReq(){
   if(editId){
     data.id=editId;
     // Preservar campos que no deben cambiar al editar
-    const existing=DATA.reqs.find(r=>r.id===editId);
+    const existing=DATA.reqs.find(r=>String(r.id)===String(editId));
     if(existing){
       data.status=existing.status;
       data.folio=existing.folio;
@@ -834,14 +842,14 @@ async function persistReq(data, isNew=false){
     if(!data.id) data.id='r_'+Date.now();
   }
   if(isNew){ DATA.reqs.push(data); }
-  else { const idx=DATA.reqs.findIndex(r=>r.id===data.id); if(idx>=0) DATA.reqs[idx]=data; else DATA.reqs.push(data); }
+  else { const idx=DATA.reqs.findIndex(r=>String(r.id)===String(data.id)); if(idx>=0) DATA.reqs[idx]=data; else DATA.reqs.push(data); }
   // Save document if pending
   if(pendingDocFile&&data.id){
     await saveDocFile(data.id, pendingDocFile);
     data.tieneComprobante=true;
     pendingDocFile=null;
     // Update the stored record with tieneComprobante=true
-    const idx2=DATA.reqs.findIndex(r=>r.id===data.id);
+    const idx2=DATA.reqs.findIndex(r=>String(r.id)===String(data.id));
     if(idx2>=0) DATA.reqs[idx2].tieneComprobante=true;
   }
   localStorage.setItem(SK_DATA,JSON.stringify(DATA));
@@ -852,7 +860,7 @@ async function deleteReq(id){
   const rid=id||document.getElementById('r-id').value||editId;
   if(!rid||!confirm('¿Eliminar esta requisición?')) return;
   if(GAS_URL){ try{ await apiFetch('','POST',{action:'deleteReq',id:rid}); }catch(e){ showToast('Error: '+e.message); return; } }
-  DATA.reqs=DATA.reqs.filter(r=>r.id!==rid);
+  DATA.reqs=DATA.reqs.filter(r=>String(r.id)!==String(rid));
   localStorage.setItem(SK_DATA,JSON.stringify(DATA));
   closeModal('req-modal'); closeModal('detail-modal'); renderSection(); showToast('Requisición eliminada');
 }
@@ -958,7 +966,7 @@ function parseDocFields(raw){
 
 // ─── EXPORT FICHA ──────────────────────────────────────
 function exportDetallePDF(id){
-  const r=DATA.reqs.find(x=>x.id===id); if(!r) return;
+  const r=DATA.reqs.find(x=>String(x.id)===String(id)); if(!r) return;
   const itemsRows=(r.items||[]).map((it,i)=>`<tr><td>${i+1}. ${it.desc||'—'}</td><td style="text-align:center">${it.qty||1}</td><td style="text-align:right">$${parseFloat(it.precio||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</td><td style="text-align:right;font-weight:600">$${((it.qty||1)*(it.precio||0)).toLocaleString('es-MX',{minimumFractionDigits:2})}</td></tr>`).join('');
   const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Requisición ${r.folio}</title>
   <style>body{font-family:-apple-system,sans-serif;margin:0;padding:2rem;color:#1a1a2e;max-width:750px;margin:0 auto}
