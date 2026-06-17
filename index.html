@@ -147,6 +147,11 @@ tr:hover td{background:#fafaf8;cursor:pointer}
 .rubro-kpi{background:#fff;border-radius:10px;padding:10px 14px;border:1px solid #e8e8e6}
 .rubro-kpi .rlbl{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px}
 .rubro-kpi .rval{font-size:16px;font-weight:600;color:#1a1a2e}
+summary::-webkit-details-marker{display:none}
+summary{position:relative}
+summary::before{content:'▸';position:absolute;left:-2px;top:50%;transform:translateY(-50%);color:#aaa;font-size:11px}
+details[open] summary::before{content:'▾'}
+summary{padding-left:14px!important}
 
 @media(max-width:600px){.form-grid,.detail-grid{grid-template-columns:1fr}.item-row{grid-template-columns:1fr 60px 80px 28px}.role-grid{grid-template-columns:1fr}.tipo-tabs{flex-direction:column}}
 </style>
@@ -493,6 +498,52 @@ function renderRequisiciones(){
 }
 
 // ─── REPOSITORIO ───────────────────────────────────────
+function renderMonthWeekBreakdown(pagadas){
+  if(!pagadas.length) return '<p style="color:#aaa;font-size:12px;text-align:center;padding:1rem">Sin datos aún</p>';
+  const meses=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  function parseLocal2(raw){
+    if(!raw) return null;
+    const str=raw.includes('T')?raw.slice(0,10):raw;
+    if(str.includes('/')){ const [dd,mm,yyyy]=str.split('/'); return new Date(parseInt(yyyy),parseInt(mm)-1,parseInt(dd)); }
+    if(str.includes('-')){ const [yyyy,mm,dd]=str.split('-'); return new Date(parseInt(yyyy),parseInt(mm)-1,parseInt(dd)); }
+    return null;
+  }
+  // Agrupar por año-mes
+  const byMonth={};
+  pagadas.forEach(r=>{
+    const raw=r.fechaPago||r.fecha||r.createdAt;
+    const d=parseLocal2(raw); if(!d||isNaN(d)) return;
+    const key=d.getFullYear()+'-'+String(d.getMonth()).padStart(2,'0');
+    if(!byMonth[key]) byMonth[key]={year:d.getFullYear(),month:d.getMonth(),total:0,weeks:{},items:[]};
+    byMonth[key].total+=parseFloat(r.total||0);
+    byMonth[key].items.push(r);
+    const semanaNum=Math.ceil(d.getDate()/7); // semana 1-5 dentro del mes
+    if(!byMonth[key].weeks[semanaNum]) byMonth[key].weeks[semanaNum]={total:0,count:0,from:null,to:null};
+    byMonth[key].weeks[semanaNum].total+=parseFloat(r.total||0);
+    byMonth[key].weeks[semanaNum].count++;
+  });
+  const sortedKeys=Object.keys(byMonth).sort().reverse();
+  return sortedKeys.map(key=>{
+    const m=byMonth[key];
+    const weekKeys=Object.keys(m.weeks).sort((a,b)=>a-b);
+    const weeksHtml=weekKeys.map(wk=>{
+      const w=m.weeks[wk];
+      const diaIni=(wk-1)*7+1, diaFin=Math.min(wk*7,31);
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 14px;border-bottom:1px solid #f5f5f3;font-size:12px">
+        <span style="color:#888">Semana ${wk} <span style="color:#bbb">(días ${diaIni}-${diaFin})</span> — ${w.count} req.</span>
+        <strong>$${w.total.toLocaleString('es-MX',{minimumFractionDigits:2})}</strong>
+      </div>`;
+    }).join('');
+    return `<details style="margin-bottom:8px;border:1px solid #e8e8e6;border-radius:8px;overflow:hidden">
+      <summary style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;background:#f8f8f6;font-size:13px;font-weight:600;list-style:none">
+        <span>${meses[m.month]} ${m.year} <span style="color:#aaa;font-weight:400;font-size:11px">(${m.items.length} requisiciones)</span></span>
+        <span style="color:#1a1a2e">$${m.total.toLocaleString('es-MX',{minimumFractionDigits:2})}</span>
+      </summary>
+      <div style="background:#fff">${weeksHtml}</div>
+    </details>`;
+  }).join('');
+}
+
 let repoperiod='mes';
 function setRepoPeriod(p){ repoperiod=p; renderRepositorio(); }
 function filterByPeriod(reqs,p){
@@ -580,6 +631,10 @@ function renderRepositorio(){
       </div>
     </div>`;
   })()}
+  <div class="table-wrap" style="margin-bottom:1rem">
+    <div class="tbl-header"><span style="font-size:14px;font-weight:600">📅 Desglose por semana y mes (todo el año)</span></div>
+    <div style="padding:12px 16px">${renderMonthWeekBreakdown(allPagadas)}</div>
+  </div>
   <div class="table-wrap">
     <div class="tbl-header">
       <span style="font-size:14px;font-weight:600">🗂 Gastos Comprobados</span>
