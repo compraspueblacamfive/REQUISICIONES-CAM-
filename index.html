@@ -545,7 +545,16 @@ function renderMonthWeekBreakdown(pagadas){
 }
 
 let repoperiod='mes';
+let repoCustomFrom='';
+let repoCustomTo='';
 function setRepoPeriod(p){ repoperiod=p; renderRepositorio(); }
+function applyCustomRange(){
+  repoCustomFrom=document.getElementById('repo-from').value;
+  repoCustomTo=document.getElementById('repo-to').value;
+  if(!repoCustomFrom||!repoCustomTo){ showToast('Selecciona ambas fechas'); return; }
+  repoperiod='custom';
+  renderRepositorio();
+}
 function filterByPeriod(reqs,p){
   if(p==='todo') return reqs;
   const now=new Date();
@@ -567,6 +576,18 @@ function filterByPeriod(reqs,p){
       return new Date(parseInt(yyyy),parseInt(mm)-1,parseInt(dd));
     }
     return null;
+  }
+
+  if(p==='custom'){
+    if(!repoCustomFrom||!repoCustomTo) return reqs;
+    const desde=parseLocal(repoCustomFrom);
+    const hasta=parseLocal(repoCustomTo);
+    return reqs.filter(r=>{
+      const raw=r.fechaPago||r.fecha||r.createdAt;
+      const d=parseLocal(raw);
+      if(!d||isNaN(d)) return false;
+      return d>=desde && d<=hasta;
+    });
   }
 
   return reqs.filter(r=>{
@@ -598,8 +619,16 @@ function renderRepositorio(){
   const conComp=pagadas.filter(r=>r.tieneComprobante).length;
   const periodos=[['semana','Esta semana'],['mes','Este mes'],['anterior','Mes anterior'],['todo','Todo']];
   document.getElementById('main-content').innerHTML=`
-  <div style="display:flex;gap:6px;margin-bottom:1rem;flex-wrap:wrap">
+  <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
     ${periodos.map(([k,l])=>`<button onclick="setRepoPeriod('${k}')" style="padding:6px 14px;border-radius:20px;border:1px solid ${repoperiod===k?'#1a1a2e':'#ddd'};background:${repoperiod===k?'#1a1a2e':'#fff'};color:${repoperiod===k?'#fff':'#555'};font-size:11px;cursor:pointer;font-weight:${repoperiod===k?'600':'400'}">${l}</button>`).join('')}
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid #e8e8e6;border-radius:10px;padding:10px 14px">
+    <span style="font-size:11px;color:#888;font-weight:500">📅 Rango personalizado:</span>
+    <input type="date" id="repo-from" value="${repoCustomFrom}" style="padding:5px 10px;border:1px solid #ddd;border-radius:8px;font-size:11px">
+    <span style="color:#aaa;font-size:11px">a</span>
+    <input type="date" id="repo-to" value="${repoCustomTo}" style="padding:5px 10px;border:1px solid #ddd;border-radius:8px;font-size:11px">
+    <button class="btn btn-dark btn-sm" onclick="applyCustomRange()">Filtrar</button>
+    ${repoperiod==='custom'?`<span style="font-size:11px;color:#059669;font-weight:500">✓ Filtro activo: ${fmtDate(repoCustomFrom)} — ${fmtDate(repoCustomTo)}</span>`:''}
   </div>
   <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:10px">
     <div class="kpi"><div class="lbl">Total comprobado</div><div class="val" style="font-size:18px">${fmtMoney(total)}</div></div>
