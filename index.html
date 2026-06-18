@@ -429,6 +429,20 @@ function renderDashboard(){
   const apro=reqs.filter(r=>r.status==='aprobada');
   const pag=reqs.filter(r=>r.status==='pagada');
   const rech=reqs.filter(r=>r.status==='rechazada');
+
+  // Sumar por moneda para no mezclar USD con MXN
+  function sumByMoneda(arr){
+    const sums={};
+    arr.forEach(r=>{ const mon=r.moneda||'MXN'; sums[mon]=(sums[mon]||0)+parseFloat(r.total||0); });
+    return sums;
+  }
+  const pendSums=sumByMoneda(pend);
+  const aproSums=sumByMoneda(apro);
+  function fmtSums(sums){
+    const keys=Object.keys(sums);
+    if(!keys.length) return '$0.00';
+    return keys.map(k=>fmtMoney(sums[k],k)).join(' + ');
+  }
   const totalPend=pend.reduce((s,r)=>s+parseFloat(r.total||0),0);
   const recent=[...reqs].reverse().slice(0,10);
   document.getElementById('main-content').innerHTML=`
@@ -438,6 +452,18 @@ function renderDashboard(){
     <div class="kpi"><div class="lbl">Pagadas</div><div class="val" style="color:#065F46">${pag.length}</div></div>
     <div class="kpi"><div class="lbl">Rechazadas</div><div class="val" style="color:#991B1B">${rech.length}</div></div>
     <div class="kpi"><div class="lbl">Total registros</div><div class="val">${reqs.length}</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:1.5rem">
+    <div class="table-wrap" style="padding:16px 18px;background:#FFFBEB;border-color:#FDE68A">
+      <div style="font-size:11px;font-weight:600;color:#92400E;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">⏳ Dinero necesario — Pendientes de aprobar</div>
+      <div style="font-size:22px;font-weight:700;color:#92400E">${fmtSums(pendSums)}</div>
+      <div style="font-size:11px;color:#B45309;margin-top:3px">${pend.length} requisición(es) esperando aprobación</div>
+    </div>
+    <div class="table-wrap" style="padding:16px 18px;background:#EFF6FF;border-color:#BFDBFE">
+      <div style="font-size:11px;font-weight:600;color:#1E40AF;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">💰 Dinero necesario — Aprobadas por pagar</div>
+      <div style="font-size:22px;font-weight:700;color:#1E40AF">${fmtSums(aproSums)}</div>
+      <div style="font-size:11px;color:#2563EB;margin-top:3px">${apro.length} requisición(es) listas para pago</div>
+    </div>
   </div>
   <div class="table-wrap">
     <div class="tbl-header"><span style="font-size:14px;font-weight:600">Requisiciones recientes</span></div>
