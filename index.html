@@ -16,7 +16,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .login-header h1{color:#fff;font-size:18px;font-weight:600}
 .login-header p{color:rgba(255,255,255,.5);font-size:12px;margin-top:4px}
 .login-body{padding:1.5rem 2rem}
-.role-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:1.25rem}
+.role-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:1.25rem;max-height:260px;overflow-y:auto}
 .role-card{border:1px solid #e8e8e6;border-radius:10px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .15s}
 .role-card:hover{border-color:#1a1a2e;background:#f8f8f6}
 .role-card.selected{border:2px solid #1a1a2e;background:#f5f5f3}
@@ -166,30 +166,14 @@ summary{padding-left:14px!important}
       <p>Importaciones CAM S.A. de C.V.</p>
     </div>
     <div class="login-body">
-      <p style="font-size:12px;color:#888;margin-bottom:12px;text-align:center">Selecciona tu rol e ingresa tu PIN</p>
-      <div class="role-grid">
-        <div class="role-card" onclick="selectRole('admin')" id="role-admin">
-          <div class="icon">👩‍💼</div>
-          <div class="name">Administrador</div>
-          <div class="desc">Captura y edita</div>
-        </div>
-        <div class="role-card" onclick="selectRole('jefe')" id="role-jefe">
-          <div class="icon">✅</div>
-          <div class="name">Jefe / Gerente</div>
-          <div class="desc">Aprueba</div>
-        </div>
-        <div class="role-card" onclick="selectRole('contador')" id="role-contador">
-          <div class="icon">💰</div>
-          <div class="name">Contador</div>
-          <div class="desc">Marca pagado</div>
-        </div>
-      </div>
+      <p style="font-size:12px;color:#888;margin-bottom:12px;text-align:center">Selecciona tu usuario e ingresa tu PIN</p>
+      <div class="role-grid" id="user-grid"></div>
       <div class="pin-row">
         <input type="password" class="pin-input" id="pin-input" placeholder="● ● ● ●" maxlength="10" onkeydown="if(event.key==='Enter') doLogin()">
         <button class="btn btn-dark" onclick="doLogin()" style="padding:9px 20px">Entrar →</button>
       </div>
       <p class="login-error" id="login-error" style="display:none">PIN incorrecto</p>
-      <p style="font-size:11px;color:#bbb;text-align:center;margin-top:12px">PIN por defecto: <strong>1234</strong> para todos — cámbialo en Configuración</p>
+      <p style="font-size:11px;color:#bbb;text-align:center;margin-top:12px">Usuario por defecto: <strong>Administrador</strong> · PIN <strong>1234</strong></p>
     </div>
   </div>
 </div>
@@ -212,7 +196,7 @@ summary{padding-left:14px!important}
     <button class="snav active" onclick="setSection('dashboard')" id="snav-dashboard">📊 Dashboard</button>
     <button class="snav" onclick="setSection('requisiciones')" id="snav-requisiciones">📋 Requisiciones</button>
     <button class="snav" onclick="setSection('repositorio')" id="snav-repositorio">🗂 Repositorio</button>
-    <button class="snav" onclick="setSection('config')" id="snav-config">⚙️ Config</button>
+    <button class="snav" onclick="setSection('config')" id="snav-config" style="display:none">⚙️ Config</button>
   </div>
   <div class="content" id="main-content"></div>
 </div>
@@ -301,20 +285,25 @@ summary{padding-left:14px!important}
   </div>
 </div>
 
-<!-- CONFIG PINS MODAL -->
-<div class="modal-bg" id="config-pins-modal">
+<!-- USER MANAGEMENT MODAL -->
+<div class="modal-bg" id="user-modal">
   <div class="modal" style="max-width:440px">
-    <div class="modal-top"><h2>Cambiar PINs de acceso</h2><button class="modal-close" onclick="closeModal('config-pins-modal')">✕</button></div>
+    <div class="modal-top"><h2 id="user-modal-title">Nuevo Usuario</h2><button class="modal-close" onclick="closeModal('user-modal')">✕</button></div>
     <div class="modal-body">
+      <input type="hidden" id="u-id">
       <div class="form-grid">
-        <div class="fg"><label>PIN Administrador</label><input type="password" id="pin-admin" placeholder="Nuevo PIN"></div>
-        <div class="fg"><label>PIN Jefe / Gerente</label><input type="password" id="pin-jefe" placeholder="Nuevo PIN"></div>
-        <div class="fg"><label>PIN Contador</label><input type="password" id="pin-contador" placeholder="Nuevo PIN"></div>
+        <div class="fg form-full"><label>Nombre completo *</label><input id="u-nombre" placeholder="Ej. María López"></div>
+        <div class="fg form-full"><label>PIN / Contraseña *</label><input id="u-pin" placeholder="Ej. 4521" maxlength="10"></div>
+        <div class="fg form-full" style="flex-direction:row;align-items:center;gap:8px;margin-top:4px">
+          <input type="checkbox" id="u-config" style="width:16px;height:16px">
+          <label style="text-transform:none;font-size:12px;font-weight:500;color:#1a1a2e">Puede acceder a ⚙️ Configuración</label>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-sm" onclick="closeModal('config-pins-modal')">Cancelar</button>
-      <button class="btn btn-dark btn-sm" onclick="savePins()">Guardar PINs</button>
+      <button class="btn btn-red btn-sm" id="btn-del-user" onclick="deleteUsuario()" style="display:none;margin-right:auto">🗑 Eliminar</button>
+      <button class="btn btn-sm" onclick="closeModal('user-modal')">Cancelar</button>
+      <button class="btn btn-dark btn-sm" onclick="saveUsuario()">Guardar usuario</button>
     </div>
   </div>
 </div>
@@ -328,43 +317,67 @@ const SK_GAS   = 'cam_req_gas_url';
 const SK_APIKEY = 'cam_req_apikey';
 let APIKEY = localStorage.getItem('cam_req_apikey')||'';
 const SK_DATA  = 'cam_req_cache';
-const SK_PINS  = 'cam_req_pins';
+const SK_USUARIOS = 'cam_req_usuarios';
 let GAS_URL    = localStorage.getItem(SK_GAS)||'';
 let DATA       = {reqs:[]};
 let currentSection = 'dashboard';
-let currentRole    = '';
+let currentUser    = null; // {id, nombre, puedeConfig}
 let editId         = null;
 let pendingItems   = [];
 let currentTipos   = ['compra']; // array - multi select
 const FOLIO_KEY    = 'cam_req_folio';
 
-// ─── PINS ──────────────────────────────────────────────
-function getPins(){ try{ return JSON.parse(localStorage.getItem(SK_PINS))||{admin:'1234',jefe:'1234',contador:'1234'}; }catch{ return {admin:'1234',jefe:'1234',contador:'1234'}; } }
-function savePins(){ const p=getPins(); ['admin','jefe','contador'].forEach(r=>{ const v=document.getElementById('pin-'+r).value.trim(); if(v) p[r]=v; }); localStorage.setItem(SK_PINS,JSON.stringify(p)); closeModal('config-pins-modal'); showToast('✓ PINs actualizados'); }
+// ─── USUARIOS ──────────────────────────────────────────
+let usuarios = [];
+try{ usuarios=JSON.parse(localStorage.getItem(SK_USUARIOS)||'[]'); }catch(e){ usuarios=[]; }
+if(!usuarios.length){
+  usuarios=[{id:'u_admin',nombre:'Administrador',pin:'1234',puedeConfig:true,createdAt:new Date().toISOString()}];
+  localStorage.setItem(SK_USUARIOS,JSON.stringify(usuarios));
+}
+function saveUsuariosLocal(){ localStorage.setItem(SK_USUARIOS,JSON.stringify(usuarios)); }
 
-// ─── LOGIN ─────────────────────────────────────────────
-let selectedRole = 'admin';
-function selectRole(r){ selectedRole=r; document.querySelectorAll('.role-card').forEach(c=>c.classList.remove('selected')); document.getElementById('role-'+r).classList.add('selected'); document.getElementById('pin-input').focus(); }
+function renderUserGrid(){
+  const grid=document.getElementById('user-grid');
+  if(!grid) return;
+  grid.innerHTML=usuarios.map(u=>`
+    <div class="role-card" onclick="selectUser('${u.id}')" id="user-card-${u.id}">
+      <div class="icon">${u.puedeConfig?'🔑':'👤'}</div>
+      <div class="name">${escHtml(u.nombre)}</div>
+      <div class="desc">${u.puedeConfig?'Acceso total':'Operativo'}</div>
+    </div>`).join('');
+}
+
+let selectedUserId = '';
+function selectUser(id){
+  selectedUserId=id;
+  document.querySelectorAll('.role-card').forEach(c=>c.classList.remove('selected'));
+  const el=document.getElementById('user-card-'+id);
+  if(el) el.classList.add('selected');
+  document.getElementById('pin-input').focus();
+}
+
 function doLogin(){
   const pin = document.getElementById('pin-input').value.trim();
-  const pins = getPins();
-  if(pins[selectedRole]===pin){
-    currentRole=selectedRole;
+  const usr = usuarios.find(u=>u.id===selectedUserId);
+  if(!usr){ document.getElementById('login-error').textContent='Selecciona un usuario'; document.getElementById('login-error').style.display=''; return; }
+  if(String(usr.pin)===pin){
+    currentUser={id:usr.id, nombre:usr.nombre, puedeConfig:!!usr.puedeConfig};
     document.getElementById('login-screen').style.display='none';
     document.getElementById('app').style.display='block';
-    const labels={admin:'Administrador',jefe:'Jefe / Gerente',contador:'Contador'};
-    document.getElementById('role-label').textContent=labels[currentRole];
+    document.getElementById('role-label').textContent=currentUser.nombre;
+    document.getElementById('snav-config').style.display=currentUser.puedeConfig?'':'none';
     const cached=localStorage.getItem(SK_DATA);
     if(cached) try{ DATA=JSON.parse(cached); }catch(e){}
     if(GAS_URL) syncAll(); else setSection('dashboard');
   } else {
+    document.getElementById('login-error').textContent='PIN incorrecto';
     document.getElementById('login-error').style.display='';
     document.getElementById('pin-input').value='';
     setTimeout(()=>document.getElementById('login-error').style.display='none',2500);
   }
 }
-function doLogout(){ document.getElementById('app').style.display='none'; document.getElementById('login-screen').style.display='flex'; document.getElementById('pin-input').value=''; currentRole=''; }
-document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeModal('req-modal'); closeModal('detail-modal'); closeModal('config-pins-modal'); } });
+function doLogout(){ document.getElementById('app').style.display='none'; document.getElementById('login-screen').style.display='flex'; document.getElementById('pin-input').value=''; currentUser=null; selectedUserId=''; renderUserGrid(); }
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeModal('req-modal'); closeModal('detail-modal'); closeModal('user-modal'); } });
 
 // ─── SYNC ──────────────────────────────────────────────
 async function syncAll(){
@@ -396,6 +409,26 @@ async function syncAll(){
       return req;
     });
     localStorage.setItem(SK_DATA,JSON.stringify(DATA));
+
+    // Sincronizar usuarios también
+    try{
+      const us=await apiFetch('getUsuarios');
+      if(us&&us.length){
+        usuarios=us.map(u=>{
+          u.id=String(u.id);
+          if(typeof u.puedeConfig==='string') u.puedeConfig=(u.puedeConfig==='true');
+          return u;
+        });
+        saveUsuariosLocal();
+        // Si el usuario actual sigue logueado, refrescar su permiso de config
+        if(currentUser){
+          const me=usuarios.find(u=>u.id===currentUser.id);
+          if(me){ currentUser.puedeConfig=!!me.puedeConfig; const cfgBtn=document.getElementById('snav-config'); if(cfgBtn) cfgBtn.style.display=currentUser.puedeConfig?'':'none'; }
+        }
+        renderUserGrid();
+      }
+    }catch(e){ /* usuarios sync es best-effort, no bloquea el login */ }
+
     document.getElementById('sync-status').textContent='Sync: '+new Date().toLocaleTimeString('es-MX');
     showToast('✓ Datos actualizados');
   }catch(e){ showToast('Error: '+e.message); }
@@ -412,7 +445,13 @@ async function apiFetch(action,method='GET',body=null){
 }
 
 // ─── NAVIGATION ────────────────────────────────────────
-function setSection(s){ currentSection=s; document.querySelectorAll('.snav').forEach(b=>b.classList.toggle('active',b.id==='snav-'+s)); renderSection(); }
+function setSection(s){
+  if(s==='config' && currentUser && !currentUser.puedeConfig){
+    showToast('🔒 No tienes permiso para acceder a Configuración');
+    return;
+  }
+  currentSection=s; document.querySelectorAll('.snav').forEach(b=>b.classList.toggle('active',b.id==='snav-'+s)); renderSection();
+}
 function renderSection(){ if(currentSection==='dashboard') renderDashboard(); else if(currentSection==='requisiciones') renderRequisiciones(); else if(currentSection==='repositorio') renderRepositorio(); else if(currentSection==='config') renderConfig(); }
 
 // ─── HELPERS ───────────────────────────────────────────
@@ -777,7 +816,7 @@ function openDetail(id){
 // ─── STATUS CHANGES ────────────────────────────────────
 async function changeStatus(id, newStatus){
   const r=DATA.reqs.find(x=>String(x.id)===String(id)); if(!r) return;
-  const roleLabel={admin:'Administrador',jefe:'Jefe',contador:'Contador'}[currentRole]||currentRole;
+  const roleLabel=currentUser?currentUser.nombre:'Usuario';
   r.status=newStatus;
   if(newStatus==='aprobada'){ r.aprobadoPor=roleLabel; r.fechaAprobacion=new Date().toISOString().slice(0,10); }
   if(newStatus==='pagada'){ r.pagadoPor=roleLabel; r.fechaPago=new Date().toISOString().slice(0,10); }
@@ -790,7 +829,7 @@ function promptRechazo(id){
   const motivo=prompt('Motivo del rechazo (opcional):');
   const r=DATA.reqs.find(x=>String(x.id)===String(id)); if(!r) return;
   r.status='rechazada';
-  r.rechazadoPor={admin:'Administrador',jefe:'Jefe',contador:'Contador'}[currentRole]||currentRole;
+  r.rechazadoPor=currentUser?currentUser.nombre:'Usuario';
   r.motivoRechazo=motivo||'';
   persistReq(r).then(()=>{ closeModal('detail-modal'); renderSection(); showToast('Requisición rechazada'); });
 }
@@ -938,7 +977,7 @@ async function saveReq(){
       data.motivoRechazo=existing.motivoRechazo||'';
       data.tieneComprobante=existing.tieneComprobante||false;
     }
-  } else { data.id=''; data.folio=genFolio(); data.status='pendiente'; data.creadoPor={admin:'Administrador',jefe:'Jefe',contador:'Contador'}[currentRole]||currentRole; data.createdAt=new Date().toISOString(); }
+  } else { data.id=''; data.folio=genFolio(); data.status='pendiente'; data.creadoPor=currentUser?currentUser.nombre:'Usuario'; data.createdAt=new Date().toISOString(); }
   await persistReq(data,!editId);
   closeModal('req-modal'); renderSection(); showToast(editId?'✓ Requisición actualizada':'✓ Requisición creada — '+data.folio);
 }
@@ -1141,6 +1180,7 @@ function exportRepo(){
 // ─── CONFIG ────────────────────────────────────────────
 function renderConfig(){
   setTimeout(()=>renderVehiclesList(),50);
+  setTimeout(()=>renderUsersList(),50);
   document.getElementById('main-content').innerHTML=`
   <div style="max-width:520px;display:flex;flex-direction:column;gap:14px">
     <div class="table-wrap" style="padding:1.5rem">
@@ -1168,8 +1208,12 @@ function renderConfig(){
       <button class="btn btn-dark btn-sm" onclick="saveApiKey()">Guardar API Key</button>
     </div>
     <div class="table-wrap" style="padding:1.5rem">
-      <div style="font-size:14px;font-weight:600;margin-bottom:1rem">🔑 PINs de acceso</div>
-      <button class="btn btn-dark btn-sm" onclick="openModal('config-pins-modal')">Cambiar PINs</button>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+        <div style="font-size:14px;font-weight:600">👥 Gestión de Usuarios</div>
+        <button class="btn btn-dark btn-sm" onclick="openNewUser()">+ Nuevo usuario</button>
+      </div>
+      <p style="font-size:11px;color:#888;margin-bottom:10px">Cada usuario tiene su propio nombre y PIN. Solo quienes tengan marcado "Puede acceder a Configuración" verán esta pestaña.</p>
+      <div id="users-list" style="max-height:280px;overflow-y:auto"></div>
     </div>
     <div class="table-wrap" style="padding:1.5rem">
       <div style="font-size:14px;font-weight:600;margin-bottom:1rem">🚗 Vehículos (para cálculo de gasolina)</div>
@@ -1207,6 +1251,7 @@ function doGet(e) {
   const action = e.parameter.action;
   try {
     if (action==='getReqs') return output({ok:true,data:getAll('Requisiciones')});
+    if (action==='getUsuarios') return output({ok:true,data:getAll('Usuarios')});
     return output({ok:false,error:'Unknown action'});
   } catch(e) { return output({ok:false,error:e.message}); }
 }
@@ -1216,6 +1261,8 @@ function doPost(e) {
   try {
     if (body.action==='saveReq') return output({ok:true,data:saveRow('Requisiciones',body.data)});
     if (body.action==='deleteReq') return output({ok:true,data:deleteRow('Requisiciones',body.id)});
+    if (body.action==='saveUsuario') return output({ok:true,data:saveRow('Usuarios',body.data)});
+    if (body.action==='deleteUsuario') return output({ok:true,data:deleteRow('Usuarios',body.id)});
     return output({ok:false,error:'Unknown'});
   } catch(e) { return output({ok:false,error:e.message}); }
 }
@@ -1290,6 +1337,16 @@ function initSheet() {
       'pagadoPor','fechaPago','rechazadoPor','motivoRechazo'
     ]]);
   }
+
+  let usersSheet = SS.getSheetByName('Usuarios');
+  if (!usersSheet) usersSheet = SS.insertSheet('Usuarios');
+  if (usersSheet.getLastRow()===0) {
+    usersSheet.getRange(1,1,1,5).setValues([[
+      'id','nombre','pin','puedeConfig','createdAt'
+    ]]);
+    usersSheet.appendRow(['u_admin','Administrador','1234',true,new Date().toISOString()]);
+  }
+
   return 'Listo';
 }`; }
 
@@ -1343,6 +1400,105 @@ function deleteVehicle(id){
   vehicles=vehicles.filter(v=>v.id!==id);
   saveVehicles();
   renderVehiclesList();
+}
+
+// ─── USER MANAGEMENT (CRUD) ─────────────────────────────────
+function renderUsersList(){
+  const el=document.getElementById('users-list'); if(!el) return;
+  el.innerHTML=usuarios.length?usuarios.map(u=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-bottom:1px solid #f5f5f3">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:16px">${u.puedeConfig?'🔑':'👤'}</span>
+        <div>
+          <div style="font-weight:500;font-size:13px">${escHtml(u.nombre)}</div>
+          <div style="font-size:11px;color:#888">PIN: ${'•'.repeat(String(u.pin||'').length||4)} ${u.puedeConfig?'· Acceso a Configuración':''}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-sm" onclick="openEditUser('${u.id}')">✏️</button>
+        <button class="btn btn-red btn-sm" onclick="deleteUsuarioConfirm('${u.id}')">✕</button>
+      </div>
+    </div>`).join('')
+    :'<p style="padding:12px;color:#aaa;font-size:12px;text-align:center">Sin usuarios registrados</p>';
+}
+
+function openNewUser(){
+  document.getElementById('user-modal-title').textContent='Nuevo Usuario';
+  document.getElementById('u-id').value='';
+  document.getElementById('u-nombre').value='';
+  document.getElementById('u-pin').value='';
+  document.getElementById('u-config').checked=false;
+  document.getElementById('btn-del-user').style.display='none';
+  openModal('user-modal');
+}
+
+function openEditUser(id){
+  const u=usuarios.find(x=>x.id===id); if(!u) return;
+  document.getElementById('user-modal-title').textContent='Editar — '+u.nombre;
+  document.getElementById('u-id').value=u.id;
+  document.getElementById('u-nombre').value=u.nombre||'';
+  document.getElementById('u-pin').value=u.pin||'';
+  document.getElementById('u-config').checked=!!u.puedeConfig;
+  document.getElementById('btn-del-user').style.display='';
+  openModal('user-modal');
+}
+
+async function saveUsuario(){
+  const nombre=document.getElementById('u-nombre').value.trim();
+  const pin=document.getElementById('u-pin').value.trim();
+  const puedeConfig=document.getElementById('u-config').checked;
+  if(!nombre||!pin){ alert('Nombre y PIN son requeridos.'); return; }
+  const editingId=document.getElementById('u-id').value;
+
+  // Evitar dejar el sistema sin ningún usuario con acceso a Configuración
+  if(editingId && !puedeConfig){
+    const otrosConAcceso=usuarios.filter(u=>u.id!==editingId && u.puedeConfig).length;
+    if(otrosConAcceso===0){ alert('Debe haber al menos un usuario con acceso a Configuración.'); return; }
+  }
+
+  const data={id:editingId||('u_'+Date.now()), nombre, pin, puedeConfig};
+
+  if(GAS_URL){
+    showLoader('Guardando usuario...');
+    try{ const saved=await apiFetch('','POST',{action:'saveUsuario',data}); if(saved&&saved.id) data.id=String(saved.id); }
+    catch(e){ hideLoader(); showToast('Error: '+e.message); return; }
+    hideLoader();
+  }
+
+  const idx=usuarios.findIndex(u=>u.id===data.id);
+  if(idx>=0) usuarios[idx]=data; else usuarios.push(data);
+  saveUsuariosLocal();
+  renderUsersList();
+  renderUserGrid();
+  closeModal('user-modal');
+  showToast('✓ Usuario guardado');
+}
+
+function deleteUsuarioConfirm(id){
+  document.getElementById('u-id').value=id;
+  deleteUsuario();
+}
+
+async function deleteUsuario(){
+  const id=document.getElementById('u-id').value;
+  const u=usuarios.find(x=>x.id===id);
+  if(!u) return;
+  if(u.puedeConfig){
+    const otrosConAcceso=usuarios.filter(x=>x.id!==id && x.puedeConfig).length;
+    if(otrosConAcceso===0){ alert('No puedes eliminar al único usuario con acceso a Configuración.'); return; }
+  }
+  if(!confirm('¿Eliminar a '+u.nombre+'?')) return;
+  if(GAS_URL){
+    showLoader('Eliminando...');
+    try{ await apiFetch('','POST',{action:'deleteUsuario',id}); }catch(e){ hideLoader(); showToast('Error: '+e.message); return; }
+    hideLoader();
+  }
+  usuarios=usuarios.filter(x=>x.id!==id);
+  saveUsuariosLocal();
+  renderUsersList();
+  renderUserGrid();
+  closeModal('user-modal');
+  showToast('Usuario eliminado');
 }
 
 // ─── FUEL CALC ─────────────────────────────────────────────
@@ -1434,7 +1590,21 @@ async function viewDoc(reqId){
 }
 
 // ─── BOOT ──────────────────────────────────────────────
-selectRole('admin');
+renderUserGrid();
+// Sincronizar usuarios ANTES del login, para que una PC nueva vea la lista completa
+if(GAS_URL){
+  apiFetch('getUsuarios').then(us=>{
+    if(us&&us.length){
+      usuarios=us.map(u=>{
+        u.id=String(u.id);
+        if(typeof u.puedeConfig==='string') u.puedeConfig=(u.puedeConfig==='true');
+        return u;
+      });
+      saveUsuariosLocal();
+      renderUserGrid();
+    }
+  }).catch(()=>{ /* silencioso — se reintentará tras login */ });
+}
 </script>
 </body>
 </html>
