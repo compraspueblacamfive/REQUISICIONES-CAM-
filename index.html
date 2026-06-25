@@ -285,6 +285,23 @@ summary{padding-left:14px!important}
   </div>
 </div>
 
+<!-- ABONO (PAGO PARCIAL) MODAL -->
+<div class="modal-bg" id="abono-req-modal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-top"><h2>💵 Registrar pago parcial</h2><button class="modal-close" onclick="closeModal('abono-req-modal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="abr-id">
+      <div id="abr-info" style="background:#f8f8f6;border-radius:10px;padding:12px;margin-bottom:14px;font-size:12px;color:#555;line-height:1.6"></div>
+      <div class="fg" style="margin-bottom:10px"><label>Monto a abonar *</label><input id="abr-monto" type="number" step="0.01" placeholder="0.00"></div>
+      <div class="fg"><label>Fecha del abono</label><input type="date" id="abr-fecha"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-sm" onclick="closeModal('abono-req-modal')">Cancelar</button>
+      <button class="btn btn-dark btn-sm" onclick="guardarAbonoReq()">Registrar abono</button>
+    </div>
+  </div>
+</div>
+
 <!-- USER MANAGEMENT MODAL -->
 <div class="modal-bg" id="user-modal">
   <div class="modal" style="max-width:440px">
@@ -398,6 +415,12 @@ async function syncAll(){
         catch(e){ req.tipos=req.tipo?[req.tipo]:['compra']; }
       }
       if(!Array.isArray(req.tipos)) req.tipos=req.tipo?[req.tipo]:['compra'];
+      // abonos (pagos parciales) también se guarda como texto JSON
+      if(typeof req.abonos==='string'){
+        try{ req.abonos=JSON.parse(req.abonos); }catch(e){ req.abonos=[]; }
+      }
+      if(!Array.isArray(req.abonos)) req.abonos=[];
+      req.pagado=parseFloat(req.pagado)||0;
       // tieneComprobante puede llegar como texto 'true'/'false' desde Sheets
       if(typeof req.tieneComprobante==='string') req.tieneComprobante=(req.tieneComprobante==='true');
       // Google Sheets convierte fechas tipo "2026-06-17" a timestamps completos — normalizar
@@ -457,7 +480,14 @@ function renderSection(){ if(currentSection==='dashboard') renderDashboard(); el
 // ─── HELPERS ───────────────────────────────────────────
 function fmtDate(d){ if(!d) return '—'; try{ const[y,m,dd]=d.split('-'); return dd+'/'+m+'/'+y; }catch{return d;} }
 function fmtMoney(n,m){ if(!n&&n!==0) return '—'; return (m||'MXN')+' $'+parseFloat(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function saldoRestante(r){ return Math.max(0, (parseFloat(r.total)||0) - (parseFloat(r.pagado)||0)); }
 function statusBadge(s){ const map={pendiente:'b-pend',aprobada:'b-apro',pagada:'b-pag',rechazada:'b-rech'}; const lbl={pendiente:'Pendiente',aprobada:'Aprobada',pagada:'Pagada',rechazada:'Rechazada'}; return `<span class="badge ${map[s]||'b-pend'}">${lbl[s]||s}</span>`; }
+function reqBadge(r){
+  if(r.status==='aprobada' && (parseFloat(r.pagado)||0)>0 && saldoRestante(r)>0.01){
+    return `<span class="badge" style="background:#FEF3C7;color:#92400E">◐ Pago parcial</span>`;
+  }
+  return reqBadge(r);
+}
 function genFolio(){ let n=parseInt(localStorage.getItem(FOLIO_KEY)||'0')+1; localStorage.setItem(FOLIO_KEY,n.toString()); return 'REQ-'+String(n).padStart(4,'0'); }
 function calcTotal(){ return pendingItems.reduce((s,it)=>s+(parseFloat(it.qty)||0)*(parseFloat(it.precio)||0),0); }
 
@@ -470,13 +500,13 @@ function renderDashboard(){
   const rech=reqs.filter(r=>r.status==='rechazada');
 
   // Sumar por moneda para no mezclar USD con MXN
-  function sumByMoneda(arr){
+  function sumByMoneda(arr, useSaldo){
     const sums={};
-    arr.forEach(r=>{ const mon=r.moneda||'MXN'; sums[mon]=(sums[mon]||0)+parseFloat(r.total||0); });
+    arr.forEach(r=>{ const mon=r.moneda||'MXN'; sums[mon]=(sums[mon]||0)+(useSaldo?saldoRestante(r):parseFloat(r.total||0)); });
     return sums;
   }
-  const pendSums=sumByMoneda(pend);
-  const aproSums=sumByMoneda(apro);
+  const pendSums=sumByMoneda(pend,false);
+  const aproSums=sumByMoneda(apro,true);
   function fmtSums(sums){
     const keys=Object.keys(sums);
     if(!keys.length) return '$0.00';
@@ -515,7 +545,7 @@ function renderDashboard(){
         <td style="font-size:11px">${r.tipo||'—'}</td>
         <td style="font-weight:500">${fmtMoney(r.total,r.moneda)}</td>
         <td style="font-size:11px;white-space:nowrap">${fmtDate(r.fecha)}</td>
-        <td>${statusBadge(r.status)}</td>
+        <td>${reqBadge(r)}</td>
       </tr>`).join(''):'<tr><td colspan="7" class="empty">Sin requisiciones aún</td></tr>'}</tbody>
     </table></div>
   </div>`;
@@ -552,9 +582,9 @@ function renderRequisiciones(){
         <td>${r.solicitante||'—'}</td>
         <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">${r.proveedor||'—'}</td>
         <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">${(r.items||[]).map(i=>i.desc).filter(Boolean).join(', ')||'—'}</td>
-        <td style="font-weight:500;white-space:nowrap">${fmtMoney(r.total,r.moneda)}</td>
+        <td style="font-weight:500;white-space:nowrap">${fmtMoney(r.total,r.moneda)}${(parseFloat(r.pagado)||0)>0 && saldoRestante(r)>0.01?`<div style="font-size:10px;color:#059669">Pag: ${fmtMoney(r.pagado,r.moneda)}</div><div style="font-size:10px;color:#e94560">Saldo: ${fmtMoney(saldoRestante(r),r.moneda)}</div>`:''}</td>
         <td style="font-size:11px;white-space:nowrap">${fmtDate(r.fecha)}</td>
-        <td>${statusBadge(r.status)}</td>
+        <td>${reqBadge(r)}</td>
         <td style="font-size:11px;color:#888">${r.aprobadoPor||'—'}</td>
         <td style="font-size:11px;color:#888">${r.pagadoPor||'—'}</td>
       </tr>`).join(''):'<tr><td colspan="10" class="empty">Sin resultados</td></tr>'}</tbody>
@@ -715,7 +745,7 @@ function renderRepositorio(){
       });
       if(!(r.items||[]).length){ rubroTotals[fallbackRubro]=(rubroTotals[fallbackRubro]||0)+parseFloat(r.total||0); }
     });
-    const icons={Gasolina:'⛽',Hospedaje:'🏨','Alimentación':'🍽️',Transporte:'🚗',Estacionamiento:'🅿️',Casetas:'🛣️',Material:'📦',Refacción:'🔧',Servicio:'⚙️',Herramienta:'🛠️',General:'📊','Sin rubro':'—',Otros:'📌'};
+    const icons={Gasolina:'⛽',Hospedaje:'🏨','Alimentación':'🍽️',Transporte:'🚗',Estacionamiento:'🅿️',Casetas:'🛣️',Material:'📦','Máquinas':'🏭',Refacciones:'🔧',Servicio:'⚙️',Herramienta:'🛠️',General:'📊','Sin rubro':'—',Otros:'📌'};
     const entries=Object.entries(rubroTotals).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
     if(!entries.length) return '';
     return `<div style="margin-bottom:1rem">
@@ -765,7 +795,7 @@ function openDetail(id){
   </tr>`).join('');
   document.getElementById('detail-modal-body').innerHTML=`
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:1.25rem">
-      ${statusBadge(r.status)}
+      ${reqBadge(r)}
       <span style="font-size:11px;background:#f5f5f3;padding:2px 9px;border-radius:20px;color:#888">${(r.tipos||[r.tipo]).join(' + ')}</span>
       <span style="font-size:11px;color:#aaa">Creada: ${fmtDate(r.fecha)}</span>
     </div>
@@ -789,7 +819,10 @@ function openDetail(id){
       <table class="items-detail-table">
         <thead><tr><th>Descripción / Rubro</th><th style="text-align:center">Cant.</th><th style="text-align:right">P. Unit.</th><th style="text-align:right">Subtotal</th></tr></thead>
         <tbody>${itemsHtml}</tbody>
-        <tfoot><tr><td colspan="3" style="padding:8px 10px;font-weight:600;text-align:right;font-size:13px">Total</td><td style="padding:8px 10px;font-weight:700;text-align:right;font-size:15px">${fmtMoney(r.total,r.moneda)}</td></tr></tfoot>
+        <tfoot><tr><td colspan="3" style="padding:8px 10px;font-weight:600;text-align:right;font-size:13px">Total</td><td style="padding:8px 10px;font-weight:700;text-align:right;font-size:15px">${fmtMoney(r.total,r.moneda)}</td></tr>
+        ${(parseFloat(r.pagado)||0)>0?`<tr><td colspan="3" style="padding:4px 10px;text-align:right;font-size:12px;color:#059669">Pagado</td><td style="padding:4px 10px;text-align:right;font-size:13px;font-weight:600;color:#059669">${fmtMoney(r.pagado,r.moneda)}</td></tr>
+        <tr><td colspan="3" style="padding:4px 10px;text-align:right;font-size:12px;color:#e94560">Saldo pendiente</td><td style="padding:4px 10px;text-align:right;font-size:13px;font-weight:600;color:#e94560">${fmtMoney(saldoRestante(r),r.moneda)}</td></tr>`:''}
+        </tfoot>
       </table>
     </div>
     <div class="detail-sec"><h3>Trazabilidad</h3>
@@ -807,10 +840,47 @@ function openDetail(id){
   if(r.status !== 'pagada') btns.push(`<button class="btn btn-sm" onclick="closeModal('detail-modal');openEditReq('${r.id}')">✏️ Editar</button>`);
   if(r.tieneComprobante) btns.push(`<button class="btn btn-sm" style="background:#EDE9FE;color:#5B21B6;border-color:#DDD6FE" onclick="viewDoc('${r.id}')">📄 Ver comprobante</button>`);
   if(r.status==='pendiente') btns.push(`<button class="btn btn-green btn-sm" onclick="changeStatus('${r.id}','aprobada')">✅ Aprobar</button><button class="btn btn-red btn-sm" onclick="promptRechazo('${r.id}')">✗ Rechazar</button>`);
-  if(r.status==='aprobada') btns.push(`<button class="btn btn-blue btn-sm" onclick="changeStatus('${r.id}','pagada')">💰 Marcar pagada</button>`);
+  if(r.status==='aprobada') btns.push(`<button class="btn btn-blue btn-sm" onclick="changeStatus('${r.id}','pagada')">💰 Marcar pagada</button><button class="btn btn-sm" style="border-color:#FBBF24;color:#92400E" onclick="openAbonoReqModal('${r.id}')">💵 Abonar</button>`);
   btns.push(`<button class="btn btn-sm" onclick="exportDetallePDF('${r.id}')">📄 Exportar ficha</button>`);
   document.getElementById('detail-modal-footer').innerHTML='<button class="btn btn-red btn-sm" onclick="deleteReq(\''+r.id+'\')" style="margin-right:auto">🗑</button>'+btns.join('');
   openModal('detail-modal');
+}
+
+// ─── PAGO PARCIAL (ABONOS) ──────────────────────────────
+function openAbonoReqModal(id){
+  const r=DATA.reqs.find(x=>String(x.id)===String(id)); if(!r) return;
+  document.getElementById('abr-id').value=id;
+  document.getElementById('abr-monto').value='';
+  document.getElementById('abr-fecha').value=new Date().toISOString().slice(0,10);
+  const saldo=saldoRestante(r);
+  document.getElementById('abr-info').innerHTML=
+    `<strong>${r.folio||r.id}</strong> — ${r.solicitante||''}<br>
+     Total: <strong>${fmtMoney(r.total,r.moneda)}</strong><br>
+     Ya pagado: <strong style="color:#059669">${fmtMoney(r.pagado||0,r.moneda)}</strong><br>
+     Saldo pendiente: <strong style="color:#e94560">${fmtMoney(saldo,r.moneda)}</strong>`;
+  closeModal('detail-modal');
+  openModal('abono-req-modal');
+}
+
+async function guardarAbonoReq(){
+  const id=document.getElementById('abr-id').value;
+  const monto=parseFloat(document.getElementById('abr-monto').value)||0;
+  const fecha=document.getElementById('abr-fecha').value;
+  const r=DATA.reqs.find(x=>String(x.id)===String(id)); if(!r) return;
+  if(monto<=0){ alert('Ingresa un monto válido.'); return; }
+  const saldo=saldoRestante(r);
+  if(monto>saldo+0.01){
+    if(!confirm(`El abono ($${monto.toLocaleString('es-MX',{minimumFractionDigits:2})}) es mayor al saldo pendiente ($${saldo.toLocaleString('es-MX',{minimumFractionDigits:2})}). ¿Continuar de todas formas?`)) return;
+  }
+  const roleLabel=currentUser?currentUser.nombre:'Usuario';
+  r.pagado=(parseFloat(r.pagado)||0)+monto;
+  r.abonos=[...(r.abonos||[]),{monto,fecha,registradoPor:roleLabel}];
+  const liquidada = r.pagado >= (parseFloat(r.total)||0) - 0.01;
+  if(liquidada){ r.status='pagada'; r.pagadoPor=roleLabel; r.fechaPago=fecha; }
+  await persistReq(r);
+  closeModal('abono-req-modal');
+  renderSection();
+  showToast(liquidada?'✓ Requisición liquidada':'✓ Abono registrado');
 }
 
 // ─── STATUS CHANGES ────────────────────────────────────
@@ -819,7 +889,7 @@ async function changeStatus(id, newStatus){
   const roleLabel=currentUser?currentUser.nombre:'Usuario';
   r.status=newStatus;
   if(newStatus==='aprobada'){ r.aprobadoPor=roleLabel; r.fechaAprobacion=new Date().toISOString().slice(0,10); }
-  if(newStatus==='pagada'){ r.pagadoPor=roleLabel; r.fechaPago=new Date().toISOString().slice(0,10); }
+  if(newStatus==='pagada'){ r.pagadoPor=roleLabel; r.fechaPago=new Date().toISOString().slice(0,10); r.pagado=parseFloat(r.total)||0; }
   await persistReq(r);
   closeModal('detail-modal');
   renderSection();
@@ -895,7 +965,7 @@ function setTipo(t){
 function addItem(){ pendingItems.push({desc:'',qty:1,precio:'',rubro:''}); renderItems(); }
 function removeItem(i){ if(pendingItems.length>1){ pendingItems.splice(i,1); renderItems(); updateTotal(); } }
 function updateItem(i,k,v){ if(pendingItems[i]){ pendingItems[i][k]=(k==='qty'||k==='precio')?v:v; } updateTotal(); }
-const RUBROS=['','Gasolina','Hospedaje','Alimentación','Transporte','Estacionamiento','Casetas','Material','Refacción','Servicio','Herramienta','Otros'];
+const RUBROS=['','Gasolina','Hospedaje','Alimentación','Transporte','Estacionamiento','Casetas','Material','Máquinas','Refacciones','Servicio','Herramienta','Otros'];
 function renderItems(){
   const list=document.getElementById('items-list');
   list.innerHTML=pendingItems.map((it,i)=>{
@@ -976,8 +1046,10 @@ async function saveReq(){
       data.rechazadoPor=existing.rechazadoPor||'';
       data.motivoRechazo=existing.motivoRechazo||'';
       data.tieneComprobante=existing.tieneComprobante||false;
+      data.pagado=existing.pagado||0;
+      data.abonos=existing.abonos||[];
     }
-  } else { data.id=''; data.folio=genFolio(); data.status='pendiente'; data.creadoPor=currentUser?currentUser.nombre:'Usuario'; data.createdAt=new Date().toISOString(); }
+  } else { data.id=''; data.folio=genFolio(); data.status='pendiente'; data.creadoPor=currentUser?currentUser.nombre:'Usuario'; data.createdAt=new Date().toISOString(); data.pagado=0; data.abonos=[]; }
   await persistReq(data,!editId);
   closeModal('req-modal'); renderSection(); showToast(editId?'✓ Requisición actualizada':'✓ Requisición creada — '+data.folio);
 }
@@ -1328,14 +1400,23 @@ function deleteRow(sheetName, id) {
 function initSheet() {
   let sheet = SS.getSheetByName('Requisiciones');
   if (!sheet) sheet = SS.insertSheet('Requisiciones');
+  const requiredHeaders = [
+    'id','folio','status','tipo','solicitante','depto','fecha',
+    'orden','proveedor','banco','cuenta','swift','moneda',
+    'items','total','notas','tieneComprobante',
+    'creadoPor','createdAt','aprobadoPor','fechaAprobacion',
+    'pagadoPor','fechaPago','rechazadoPor','motivoRechazo',
+    'pagado','abonos'
+  ];
   if (sheet.getLastRow()===0) {
-    sheet.getRange(1,1,1,25).setValues([[
-      'id','folio','status','tipo','solicitante','depto','fecha',
-      'orden','proveedor','banco','cuenta','swift','moneda',
-      'items','total','notas','tieneComprobante',
-      'creadoPor','createdAt','aprobadoPor','fechaAprobacion',
-      'pagadoPor','fechaPago','rechazadoPor','motivoRechazo'
-    ]]);
+    sheet.getRange(1,1,1,requiredHeaders.length).setValues([requiredHeaders]);
+  } else {
+    // Hoja ya existente con datos — agregar SOLO las columnas que falten, sin tocar lo demás
+    const existingHeaders = sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0];
+    const missing = requiredHeaders.filter(h => existingHeaders.indexOf(h) === -1);
+    if (missing.length) {
+      sheet.getRange(1, existingHeaders.length+1, 1, missing.length).setValues([missing]);
+    }
   }
 
   let usersSheet = SS.getSheetByName('Usuarios');
