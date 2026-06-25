@@ -486,7 +486,7 @@ function reqBadge(r){
   if(r.status==='aprobada' && (parseFloat(r.pagado)||0)>0 && saldoRestante(r)>0.01){
     return `<span class="badge" style="background:#FEF3C7;color:#92400E">◐ Pago parcial</span>`;
   }
-  return reqBadge(r);
+  return statusBadge(r.status);
 }
 function genFolio(){ let n=parseInt(localStorage.getItem(FOLIO_KEY)||'0')+1; localStorage.setItem(FOLIO_KEY,n.toString()); return 'REQ-'+String(n).padStart(4,'0'); }
 function calcTotal(){ return pendingItems.reduce((s,it)=>s+(parseFloat(it.qty)||0)*(parseFloat(it.precio)||0),0); }
