@@ -495,6 +495,14 @@ function renderSection(){ if(currentSection==='dashboard') renderDashboard(); el
 // ─── HELPERS ───────────────────────────────────────────
 function fmtDate(d){ if(!d) return '—'; try{ const[y,m,dd]=d.split('-'); return dd+'/'+m+'/'+y; }catch{return d;} }
 function fmtMoney(n,m){ if(!n&&n!==0) return '—'; return (m||'MXN')+' $'+parseFloat(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+// Suma sin mezclar monedas: agrega "amount" al bucket de su moneda dentro de obj
+function addMon(obj, moneda, amount){ const mon=moneda||'MXN'; obj[mon]=(obj[mon]||0)+amount; return obj; }
+// Convierte {MXN:1000, USD:50} en "MXN $1,000.00 + USD $50.00"
+function fmtMonSums(sumsObj){
+  const keys=Object.keys(sumsObj).filter(k=>sumsObj[k]>0.001);
+  if(!keys.length) return '$0.00';
+  return keys.map(k=>fmtMoney(sumsObj[k],k)).join(' + ');
+}
 function saldoRestante(r){ return Math.max(0, (parseFloat(r.total)||0) - (parseFloat(r.pagado)||0)); }
 function parseFechaLocal(raw){
   if(!raw) return null;
@@ -743,12 +751,12 @@ function renderMonthWeekBreakdown(pagadas){
     const raw=fechaComprobada(r);
     const d=parseLocal2(raw); if(!d||isNaN(d)) return;
     const key=d.getFullYear()+'-'+String(d.getMonth()).padStart(2,'0');
-    if(!byMonth[key]) byMonth[key]={year:d.getFullYear(),month:d.getMonth(),total:0,weeks:{},items:[]};
-    byMonth[key].total+=montoComprobado(r);
+    if(!byMonth[key]) byMonth[key]={year:d.getFullYear(),month:d.getMonth(),totals:{},weeks:{},items:[]};
+    addMon(byMonth[key].totals, r.moneda, montoComprobado(r));
     byMonth[key].items.push(r);
     const semanaNum=Math.ceil(d.getDate()/7); // semana 1-5 dentro del mes
-    if(!byMonth[key].weeks[semanaNum]) byMonth[key].weeks[semanaNum]={total:0,count:0,from:null,to:null};
-    byMonth[key].weeks[semanaNum].total+=montoComprobado(r);
+    if(!byMonth[key].weeks[semanaNum]) byMonth[key].weeks[semanaNum]={totals:{},count:0,from:null,to:null};
+    addMon(byMonth[key].weeks[semanaNum].totals, r.moneda, montoComprobado(r));
     byMonth[key].weeks[semanaNum].count++;
   });
   const sortedKeys=Object.keys(byMonth).sort().reverse();
@@ -760,13 +768,13 @@ function renderMonthWeekBreakdown(pagadas){
       const diaIni=(wk-1)*7+1, diaFin=Math.min(wk*7,31);
       return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 14px;border-bottom:1px solid #f5f5f3;font-size:12px">
         <span style="color:#888">Semana ${wk} <span style="color:#bbb">(días ${diaIni}-${diaFin})</span> — ${w.count} req.</span>
-        <strong>$${w.total.toLocaleString('es-MX',{minimumFractionDigits:2})}</strong>
+        <strong>${fmtMonSums(w.totals)}</strong>
       </div>`;
     }).join('');
     return `<details style="margin-bottom:8px;border:1px solid #e8e8e6;border-radius:8px;overflow:hidden">
       <summary style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;background:#f8f8f6;font-size:13px;font-weight:600;list-style:none">
         <span>${meses[m.month]} ${m.year} <span style="color:#aaa;font-weight:400;font-size:11px">(${m.items.length} requisiciones)</span></span>
-        <span style="color:#1a1a2e">$${m.total.toLocaleString('es-MX',{minimumFractionDigits:2})}</span>
+        <span style="color:#1a1a2e;font-size:12px">${fmtMonSums(m.totals)}</span>
       </summary>
       <div style="background:#fff">${weeksHtml}</div>
     </details>`;
@@ -846,7 +854,8 @@ function renderRepositorio(){
   // Incluye liquidadas (pagada) Y las que ya tienen al menos un abono parcial registrado
   const allPagadas=DATA.reqs.filter(r=>r.status==='pagada' || (parseFloat(r.pagado)||0)>0);
   const pagadas=filterByPeriod(allPagadas,repoperiod,fechaComprobada);
-  const total=pagadas.reduce((s,r)=>s+montoComprobado(r),0);
+  const totalSums={};
+  pagadas.forEach(r=>addMon(totalSums,r.moneda,montoComprobado(r)));
   const conComp=pagadas.filter(r=>r.tieneComprobante).length;
   const periodos=[['semana','Esta semana'],['mes','Este mes'],['anterior','Mes anterior'],['todo','Todo']];
   document.getElementById('main-content').innerHTML=`
@@ -862,7 +871,7 @@ function renderRepositorio(){
     ${repoperiod==='custom'?`<span style="font-size:11px;color:#059669;font-weight:500">✓ Filtro activo: ${fmtDate(repoCustomFrom)} — ${fmtDate(repoCustomTo)}</span>`:''}
   </div>
   <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:10px">
-    <div class="kpi"><div class="lbl">Total comprobado</div><div class="val" style="font-size:18px">${fmtMoney(total)}</div></div>
+    <div class="kpi"><div class="lbl">Total comprobado</div><div class="val" style="font-size:15px">${fmtMonSums(totalSums)}</div></div>
     <div class="kpi"><div class="lbl">Con comprobante</div><div class="val" style="color:#065F46">${conComp}</div></div>
     <div class="kpi"><div class="lbl">Sin comprobante</div><div class="val" style="color:#991B1B">${pagadas.length-conComp}</div></div>
   </div>
@@ -870,7 +879,7 @@ function renderRepositorio(){
     // Rubro breakdown
     // Auto-map tipo → rubro when items have no rubro
     const tipoToRubro={compra:'Material',viaticos:'Viáticos',gasolina:'Gasolina',servicio:'Servicio',otros:'Otros'};
-    const rubroTotals={};
+    const rubroTotals={}; // rubroTotals[rb] = {MXN:x, USD:y}
     pagadas.forEach(r=>{
       const tipos=r.tipos||[r.tipo].filter(Boolean);
       const fallbackRubro=tipos.map(t=>tipoToRubro[t]).filter(Boolean)[0]||'General';
@@ -879,30 +888,41 @@ function renderRepositorio(){
       (r.items||[]).forEach(it=>{
         const rb=it.rubro||fallbackRubro;
         const sub=((parseFloat(it.qty)||1)*(parseFloat(it.precio)||0))*factor;
-        rubroTotals[rb]=(rubroTotals[rb]||0)+sub;
+        if(!rubroTotals[rb]) rubroTotals[rb]={};
+        addMon(rubroTotals[rb], r.moneda, sub);
       });
-      if(!(r.items||[]).length){ rubroTotals[fallbackRubro]=(rubroTotals[fallbackRubro]||0)+montoComprobado(r); }
+      if(!(r.items||[]).length){
+        if(!rubroTotals[fallbackRubro]) rubroTotals[fallbackRubro]={};
+        addMon(rubroTotals[fallbackRubro], r.moneda, montoComprobado(r));
+      }
     });
     const icons={Gasolina:'⛽',Hospedaje:'🏨','Alimentación':'🍽️',Transporte:'🚗',Estacionamiento:'🅿️',Casetas:'🛣️',Material:'📦','Máquinas':'🏭',Refacciones:'🔧',Servicio:'⚙️',Herramienta:'🛠️',General:'📊','Sin rubro':'—',Otros:'📌'};
-    const entries=Object.entries(rubroTotals).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+    const entries=Object.entries(rubroTotals).filter(([,sums])=>Object.values(sums).some(v=>v>0)).sort((a,b)=>{
+      const totalA=Object.values(a[1]).reduce((s,v)=>s+v,0), totalB=Object.values(b[1]).reduce((s,v)=>s+v,0);
+      return totalB-totalA;
+    });
     const rubroHtml = entries.length ? `<div style="margin-bottom:1rem">
       <p style="font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Desglose por rubro</p>
       <div class="rubro-grid">
-        ${entries.map(([rb,val])=>`<div class="rubro-kpi"><div class="rlbl">${icons[rb]||'📌'} ${rb}</div><div class="rval">$${val.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>`).join('')}
+        ${entries.map(([rb,sums])=>`<div class="rubro-kpi"><div class="rlbl">${icons[rb]||'📌'} ${rb}</div><div class="rval" style="font-size:13px">${fmtMonSums(sums)}</div></div>`).join('')}
       </div>
     </div>` : '';
 
     // Desglose por solicitante
-    const solicitanteTotals={};
+    const solicitanteTotals={}; // solicitanteTotals[sol] = {MXN:x, USD:y}
     pagadas.forEach(r=>{
       const sol=r.solicitante||'Sin nombre';
-      solicitanteTotals[sol]=(solicitanteTotals[sol]||0)+montoComprobado(r);
+      if(!solicitanteTotals[sol]) solicitanteTotals[sol]={};
+      addMon(solicitanteTotals[sol], r.moneda, montoComprobado(r));
     });
-    const solEntries=Object.entries(solicitanteTotals).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+    const solEntries=Object.entries(solicitanteTotals).filter(([,sums])=>Object.values(sums).some(v=>v>0)).sort((a,b)=>{
+      const totalA=Object.values(a[1]).reduce((s,v)=>s+v,0), totalB=Object.values(b[1]).reduce((s,v)=>s+v,0);
+      return totalB-totalA;
+    });
     const solHtml = solEntries.length ? `<div style="margin-bottom:1rem">
       <p style="font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Desglose por solicitante</p>
       <div class="rubro-grid">
-        ${solEntries.map(([sol,val])=>`<div class="rubro-kpi"><div class="rlbl">👤 ${sol}</div><div class="rval">$${val.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>`).join('')}
+        ${solEntries.map(([sol,sums])=>`<div class="rubro-kpi"><div class="rlbl">👤 ${sol}</div><div class="rval" style="font-size:13px">${fmtMonSums(sums)}</div></div>`).join('')}
       </div>
     </div>` : '';
 
